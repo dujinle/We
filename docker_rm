@@ -1,0 +1,56 @@
+#!/bin/bash
+
+CID="";
+CIDS="";
+#the default container name
+CNAME="";
+#get docker command
+DOCKER=`which docker`;
+
+#get contanier id by name
+function get_container_id(){
+	CID=`$DOCKER inspect -f '{{.Id}}' $CNAME 2> /dev/null`;
+}
+#get all container id
+function get_container_all(){
+	CIDS=`$DOCKER ps -a | awk '{print $1}' &> /dev/null`;
+}
+
+function del_container(){
+	MID=`echo $1 | cut -c 1-10 2>/dev/null`;
+	SID=`$DOCKER ps -a | grep ${MID} | grep 'Exited' | awk '{print $1}' | cut -c 1-10 2> /dev/null`;
+	if [[ "${SID}#" == "#" ]];then
+		echo "stop contanier [${CNAME} ${MID}]";
+		$DOCKER stop ${MID} &> /dev/null;
+	fi
+	$DOCKER rm ${MID} &> /dev/null;
+	echo "remove container [${CNAME} ${MID}]......"
+	IPNET=`ip addr show | grep "veth_${MID}" | awk -F: '{print $2}' &> /dev/null`;
+	if [[ "${IPNET}#" != "#" ]];then
+		echo "remove network veth [${IPNET}]......";
+		ip netns delete "veth_${MID}" &> /dev/null;
+	fi
+	if [ -f "/run/container/${CNAME}.pid" ];then
+		echo "remove the tmp pid file [${CNAME}.pid]......";
+		rm -rf "/run/container/${CNAME}.pid";
+	fi
+}
+if [[ $# != 1 ]];then
+	echo "Usage:$0 [all|cname]";
+	exit -1;
+fi
+
+if [[ "${1}#" = "all#" ]];then
+	get_container_all
+	for id in ${CIDS[@]};do
+		del_container $id
+	done
+else
+	CNAME=$1;
+	get_container_id
+	if [[ ! ${CID} ]];then
+		echo "not found the container ${CNAME}";
+		exit -1;
+	fi
+	del_container $CID
+fi

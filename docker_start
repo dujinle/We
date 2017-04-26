@@ -1,0 +1,50 @@
+#!/bin/bash
+
+CID="";
+CIDS="";
+#the default container name
+CNAME="";
+#get docker command
+DOCKER=`which docker`;
+
+#get contanier id by name
+function get_container_id(){
+	CID=`$DOCKER inspect -f '{{.Id}}' $CNAME 2> /dev/null`;
+}
+#get all container id
+function get_container_all(){
+	CIDS=`$DOCKER ps -a | awk '{if($1 != 'CONTAINER'){print $1}}' 2> /dev/null`;
+}
+
+function is_active(){
+	MID=`echo $1 | cut -c 1-10 2>/dev/null`;
+	SID=`$DOCKER ps -a | grep ${MID} | grep 'Exited' | awk '{print $1}' | cut -c 1-10 2> /dev/null`;
+	if [[ "${SID}#" == "#" ]];then
+		echo "container ${CNAME} is start......";
+		return 0;
+	fi
+	return -1;
+}
+
+if [[ $# != 1 ]];then
+	echo "Usage:$0 [all|cname]";
+	exit -1;
+fi
+
+if [[ "${1}#" = "all#" ]];then
+	get_container_all
+	for id in ${CIDS[@]};do
+		ret=`is_active $id`;
+		if [ ret == -1 ];then
+			$DOCKER start $id;
+		fi
+	done
+else
+	CNAME=$1;
+	get_container_id
+	if [[ ! ${CID} ]];then
+		echo "not found the container ${CNAME}";
+		exit -1;
+	fi
+	$DOCKER start $CID
+fi

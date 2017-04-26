@@ -1,0 +1,72 @@
+#!/bin/bash
+
+#the default Gateway
+RIP="";
+#the default container name
+CNAME="";
+CINIT="/sbin/init";
+#get docker command
+DOCKER=`which docker`;
+function get_container_ip(){
+	ID=`$DOCKER inspect -f '{{.Id}}' $CNAME 2> /dev/null`;
+	IP=`$DOCKER inspect --format='{{.NetworkSettings.IPAddress}}' $ID`;
+	echo $CNAME $IP;
+}
+
+function bind_container_ip(){
+	RIP=`echo $RIP | egrep '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$'`;
+	if [ ! $RIP ];then
+		echo "the IP format is error";
+		exit -1
+	fi
+	ID=`$DOCKER inspect -f '{{.Id}}' $CNAME | cut -c 1-10 2> /dev/null`;
+	if [ ! $ID ];then
+		echo "not found container id [$CNAME]......";
+		exit -1;
+	fi
+	#container netmask
+	CNETMASK=`ip addr show docker0 | grep "inet\b" | awk '{print $2}' | cut -d / -f2`;
+	#container gateway
+	CGATEWAY=`ip addr show docker0 | grep "inet\b" | awk '{print $2}' | cut -d / -f1`;
+	#bridge name
+	BNAME="veth_${ID}";
+	BIP="${RIP}/${CNETMASK}";
+	PID=`$DOCKER inspect -f '{{.State.Pid}}' $CNAME 2> /dev/null`;
+	if [ $PID == 0 ];then
+		echo "get the container $CNAME pid failed[$PID]......";
+		exit -1;
+	fi
+	if [ ! -d /var/run/netns ];then
+		mkdir -p /var/run/netns
+	fi
+	ln -sf /proc/$PID/ns/net /var/run/netns/$PID
+
+	ip link add $BNAME type veth peer name X
+	brctl addif docker0 $BNAME
+	ip link set $BNAME up
+	ip link set X netns $PID
+	ip netns exec $PID ip link set dev X name eth0
+	ip netns exec $PID ip link set eth0 up
+	ip netns exec $PID ip addr add $BIP dev eth0
+	ip netns exec $PID ip route add default via $CGATEWAY
+	echo "bind container[${CNAME}] ip pid:${PID} ip:${BIP} ${BNAME}......"
+}
+
+while true; do
+	if [[ $# == 0 ]];then break; fi
+	if [[ "${1}#" = "-ip#" ]];then
+		shift
+		RIP=$1;
+	elif [[ "${1}#" = "-name#" ]];then
+		shift
+		CNAME=$1;
+	else
+		break;
+	fi
+	shift;
+done
+if [[ "${RIP}#" == "#" ]];then
+	get_container_ip;
+else
+	bind_container_ip;
+fi

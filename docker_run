@@ -1,0 +1,134 @@
+#!/bin/bash
+
+#the default container name
+CNAME="container_0";
+#the default container hostname
+HNAME="host_0";
+#the default container expose port
+EXPOSE="22";
+#the default container open port
+PORT="";
+#the default container open random port
+RANDOM_PORT=false;
+DOCKER_IMG_ID="";
+CINIT="/sbin/init";
+#get docker command
+DOCKER=`which docker`;
+
+function make_ip_name(){
+	CONTAINER_ID=`$DOCKER ps -a |\
+		awk '{ \
+			if($1 != "CONTAINER"){ \
+				print $1
+			}
+		}'`;
+	if [[ "${CONTAINER_ID}#" == "#" ]];then
+		return 0;
+	fi
+
+	CONTAINER_NAME=`for id in ${CONTAINER_ID[@]};do \
+		$DOCKER inspect --format='{{.Name}}' $id | awk -F/ '{print $2}';
+		done`;
+	CONTAINER_HNAME=`for id in ${CONTAINER_ID[@]};do \
+		cat $($DOCKER inspect --format='{{.HostnamePath}}' $id);
+		done`;
+
+#make a new cname
+	while true;do
+		flg=true;
+		for name in ${CONTAINER_NAME[@]};do
+			if [[ "${CNAME}#" == "${name}#" ]]; then
+				MNAME_TAIL=$((${CNAME##*_} + 1));
+				CNAME="container_${MNAME_TAIL}";
+				flg=false;
+				break;
+			fi
+		done;
+		if [[ $flg == true ]];then
+			break;
+		fi
+	done
+#make a new cname
+	while true;do
+		flg=true;
+		for name in ${CONTAINER_HNAME[@]};do
+			if [[ "${HNAME}#" == "${name}#" ]]; then
+				MNAME_TAIL=$((${HNAME##*_} + 1));
+				HNAME="container_${MNAME_TAIL}";
+				flg=false;
+				break;
+			fi
+		done;
+		if [[ $flg == true ]];then
+			break;
+		fi
+	done
+}
+
+make_ip_name;
+while true; do
+	if [[ $# == 0 ]];then break; fi
+	if [[ "${1}#" = "-host#" ]];then
+		shift
+		HNAME=$1;
+	elif [[ "${1}#" = "-name#" ]];then
+		shift
+		CNAME=$1;
+	elif [[ "${1}#" = "-expose#" ]];then
+		shift
+		EXPOSE=$1;
+	elif [[ "${1}#" = "-p#" ]];then
+		shift
+		PORT=$1;
+	elif [[ "${1}#" = "-img#" ]];then
+		shift
+		DOCKER_IMG_ID=$1
+	elif [[ "${1}#" = "-cmd#" ]];then
+		shift
+		CINIT=$1
+	elif [[ "${1}#" = "-P#" ]];then
+		shift
+		RANDOM_PORT=true;
+		continue;
+	else
+		break;
+	fi
+	shift;
+done
+
+COMMAND_ARGS="-idt --name=${CNAME} --hostname=${HNAME}";
+if [[ ${RANDOM_PORT} == true ]];then
+	COMMAND_ARGS="${COMMAND_ARGS} -P";
+fi
+#paser public port to host
+for port in ${PORT[@]};do
+	COMMAND_ARGS="${COMMAND_ARGS} -p $port";
+done
+#paser expose port
+for ep in ${EXPOSE[@]};do
+	COMMAND_ARGS="${COMMAND_ARGS} --expose $ep";
+done
+if [[ "${DOCKER_IMG_ID}#" == "#" ]];then
+	echo "not found docker image id exit[-1]"
+	echo -e "help param:\n
+		\t-ip ip\n
+		\t-host hostname\n
+		\t-name container name\n
+		\t-expose public port default '22' separate by spaces\n
+		\t-P Publish all exposed ports to random ports\n
+		\t-img docker image id\n
+		\t-cmd docker init run cmd default '/sbin/init'\n
+		\t-p Publish a container's port(s) to the host"
+	exit -1;
+fi
+#create a pid file in the dir
+if [ ! -d "/run/container" ];then
+	mkdir -p "/run/container";
+fi
+PID_FILE="/run/container/${CNAME}.pid";
+COMMAND_ARGS="--net=none --cidfile=${PID_FILE} ${COMMAND_ARGS} ${DOCKER_IMG_ID} ${CINIT}";
+if [ $# != 0 ];then
+	COMMAND_ARGS="$@ ${COMMAND_ARGS}";
+fi
+echo "${DOCKER} run ${COMMAND_ARGS}";
+$DOCKER run $COMMAND_ARGS;
