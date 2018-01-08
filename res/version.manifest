@@ -1,0 +1,11 @@
+{
+	"packageUrl" : "http://192.168.1.30:80/res",
+	"remoteManifestUrl" : "http://192.168.1.30:80/res/project.manifest",
+	"remoteVersionUrl" : "http://192.168.1.30:80/res/version.manifest",
+	"version" : "1.0.1",
+	"groupVersions" : {
+		"1" : "1.0.1",
+		"2" : "1.0.2"
+	},
+	"engineVersion" : "3.9"
+}
